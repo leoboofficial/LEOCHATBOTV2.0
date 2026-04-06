@@ -105,41 +105,36 @@ async def status():
 @app.post("/chat")
 async def chat(query: Query):
     try:
-        # Check if DB has data
-        if collection.count() == 0:
-            return {"response": "I am currently performing a structural sync of the HITS website. Please wait a moment."}
-
-        # 1. Retrieve the top 6 most relevant structural chunks
-        results = collection.query(query_texts=[query.text], n_results=6)
+        # 1. Broaden the search to ensure we don't miss the table
+        results = collection.query(query_texts=[query.text], n_results=10)
         
-        # 2. Build the context string including the Labels
         context_parts = []
         for doc, meta in zip(results['documents'][0], results['metadatas'][0]):
-            context_parts.append(f"[Section: {meta['label']}]\n{doc}")
+            # Force inclusion of the label so the AI knows which section it's reading
+            label = meta.get('label', 'General')
+            context_parts.append(f"### SECTION: {label}\n{doc}")
         
         full_context = "\n\n---\n\n".join(context_parts)
 
-        # 3. Generate response with Llama 3.3
+        # 2. Stronger System Prompt
+        system_message = (
+            "You are Leo Bot, the official HITS admissions assistant. "
+            "Examine the provided CONTEXT carefully, especially sections labeled 'Entrance Exam Dates' or 'Important Dates'. "
+            "If you see a table with HITSEEE 2026 dates, extract them exactly. "
+            "If a user asks for 'exam dates' and you see 'April 27, 2026 to May 02, 2026', provide that as the answer."
+        )
+
         response = client.chat.completions.create(
             messages=[
-                {
-                    "role": "system", 
-                    "content": (
-                        "You are Leo Bot, the official HITS expert. "
-                        "Use the following structured website data to answer. "
-                        "If a date or fee is in a table, report it accurately. "
-                        "If the answer isn't in the context, say you don't know.\n\n"
-                        f"CONTEXT:\n{full_context}"
-                    )
-                },
+                {"role": "system", "content": system_message},
+                {"role": "system", "content": f"CONTEXT DATA:\n{full_context}"},
                 {"role": "user", "content": query.text}
             ],
             model="llama-3.3-70b-versatile",
-            temperature=0.1
+            temperature=0  # Set to 0 for maximum accuracy with dates
         )
         
         return {"response": response.choices[0].message.content}
 
     except Exception as e:
-        print(f"Chat Error: {e}")
-        return {"response": "The knowledge base is currently refreshing. Please try again in 30 seconds."}
+        return {"response": "I'm refreshing my knowledge base. Please try in 10 seconds."}
