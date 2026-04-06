@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+chromadb
+groq
+langchain
+langchain-community
+beautifulsoup4
+requests
+pysqlite3-binary
+pydantic
