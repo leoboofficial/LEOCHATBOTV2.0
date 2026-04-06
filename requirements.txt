@@ -4,6 +4,7 @@ chromadb
 groq
 langchain
 langchain-community
+langchain-text-splitters
 beautifulsoup4
 requests
 pysqlite3-binary
