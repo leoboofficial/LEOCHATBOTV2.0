@@ -21,9 +21,10 @@ app = FastAPI()
 
 # 1. TARGET URLS (Add the most important HITS pages here)
 UNIVERSITY_URLS = [
-    "https://hindustanuniv.ac.in/aeronautical_engineering.php",
-    "https://hindustanuniv.ac.in/admission_office.php",
-    "https://hindustanuniv.ac.in/hitseee-2026.php" 
+    "https://hindustanuniv.ac.in/bachelor-of-technology-btech-aeronautical-engineering/",
+    "https://hindustanuniv.ac.in/bachelor-of-technology-btech-aerospace-engineering/",
+    "https://apply.hindustanuniv.ac.in/?_gl=1*sxuqdd*_gcl_aw*R0NMLjE3NzU0NTc2MTMuQ2owS0NRandrTWpPQmhDNUFSSXNBRElkYjNkQUlfU2F5bnJEX2dkc3AtMDlrV29sY3dnOG1UcHVydk5XWTFIRU5ZWVZDb01NMnBrZzZONGFBdEtPRUFMd193Y0I.*_gcl_au*NTg0NjA1NTU1LjE3NzUwMzA2MTg.*_ga*NzgyOTI2NjQ3LjE3NzUwMzA2MTg.*_ga_WCBH4K35YK*czE3NzU0NTc2MzgkbzQkZzEkdDE3NzU0NTc2OTIkajYkbDAkaDEyMTQyNjI3Mjg." ,
+    "https://apply.hindustanuniv.ac.in/hitseee?utm_source=kollegeapply&utm_medium=PNP71&utm_campaign=2026&gad_source=1&gad_campaignid=23592401477&gbraid=0AAAAAqmdqHSe_01IpIlkEkluHoqNOsQtN&gclid=Cj0KCQjwkMjOBhC5ARIsADIdb3f51vV6RKxav2tTts2efENakkpRLtP3Op44qMkOMHv4nfNOwqfotMoaAlaWEALw_wcB"   
 ]
 
 EXACT_GREETING = "Hello! I am Leo Bot, your Dynamic HITS Expert..."
