@@ -1,14 +1,17 @@
 import os
 import sys
-import threading # New import for background sync
+import threading
+import requests
+import logging
 from groq import Groq
 import chromadb
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from chromadb.utils import embedding_functions
-from langchain_community.document_loaders import WebBaseLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+# LangChain Structural Imports
+from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 
 # --- RENDER SQLITE FIX ---
 try:
@@ -18,80 +21,125 @@ except ImportError:
     pass 
 
 app = FastAPI()
-
-# GREETING & URLS
-UNIVERSITY_URLS = [
-    "https://hindustanuniv.ac.in/bachelor-of-technology-btech-aeronautical-engineering/",
-    "https://hindustanuniv.ac.in/bachelor-of-technology-btech-aerospace-engineering/",
-    "https://apply.hindustanuniv.ac.in/",
-    "https://apply.hindustanuniv.ac.in/hitseee"
-]
-EXACT_GREETING = "Hello! I am Leo Bot, your Dynamic HITS Expert..."
-
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# --- CONFIGURATION ---
+UNIVERSITY_URLS = [
+    "https://apply.hindustanuniv.ac.in/hitseee",
+    "https://hindustanuniv.ac.in/bachelor-of-technology-btech-aeronautical-engineering/",
+    "https://hindustanuniv.ac.in/bachelor-of-technology-btech-aerospace-engineering/"
+]
 
 # --- AI & DB INITIALIZATION ---
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-db_client = chromadb.PersistentClient(path="./dynamic_hits_db")
+db_client = chromadb.PersistentClient(path="./hits_structural_db")
 ef = embedding_functions.DefaultEmbeddingFunction()
 collection = db_client.get_or_create_collection(name="hits_web_data", embedding_function=ef)
 
-# --- BACKGROUND SYNC FUNCTION ---
-def run_sync():
-    print("🌐 Background Sync Started...")
-    try:
-        loader = WebBaseLoader(UNIVERSITY_URLS)
-        docs = loader.load()
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=700, chunk_overlap=50)
-        chunks = text_splitter.split_documents(docs)
-        
-        for i, chunk in enumerate(chunks):
-            collection.upsert(
-                ids=[f"web_chunk_{i}"],
-                documents=[chunk.page_content],
-                metadatas=[{"source": chunk.metadata['source']}]
-            )
-        print(f"✅ Sync Successful: {len(chunks)} blocks updated.")
-    except Exception as e:
-        print(f"⚠️ Sync Error: {e}")
+# --- STRUCTURAL SYNC LOGIC ---
+def run_structural_sync():
+    print("🌐 Starting Structural Sync via Jina Reader...")
+    
+    # Define headers to split on (This captures your "Labels")
+    headers_to_split_on = [
+        ("#", "Title"),
+        ("##", "Section"),
+        ("###", "SubSection"),
+    ]
+    markdown_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+
+    for url in UNIVERSITY_URLS:
+        try:
+            # 1. Fetch Clean Markdown from Jina
+            print(f"📄 Scraping: {url}")
+            jina_url = f"https://r.jina.ai/{url}"
+            headers = {"X-Return-Format": "markdown"} # Ask Jina for pure markdown
+            response = requests.get(jina_url, headers=headers, timeout=30)
+            
+            if response.status_code != 200:
+                print(f"❌ Failed to fetch {url}")
+                continue
+
+            # 2. Split by Markdown Headers (Preserves the "Labels")
+            md_header_splits = markdown_splitter.split_text(response.text)
+            
+            # 3. Further split into manageable chunks for the Vector DB
+            final_chunks = text_splitter.split_documents(md_header_splits)
+
+            # 4. Upsert into ChromaDB
+            for i, chunk in enumerate(final_chunks):
+                # Extract the label (Section Header) for better context
+                label = chunk.metadata.get("Section") or chunk.metadata.get("Title") or "General Information"
+                
+                collection.upsert(
+                    ids=[f"{url}_{i}"],
+                    documents=[chunk.page_content],
+                    metadatas=[{
+                        "source": url,
+                        "label": label,
+                        "content_type": "official_web_data"
+                    }]
+                )
+            print(f"✅ Indexed {len(final_chunks)} structural chunks from {url}")
+
+        except Exception as e:
+            print(f"⚠️ Sync Error for {url}: {e}")
+
+    print("🚀 All URLs Synced Successfully.")
 
 @app.on_event("startup")
 async def startup_event():
-    # This starts the sync in a separate thread so the server opens INSTANTLY
-    thread = threading.Thread(target=run_sync)
+    # Start sync in background so FastAPI starts instantly on Render
+    thread = threading.Thread(target=run_structural_sync)
     thread.start()
 
+# --- CHAT LOGIC ---
 class Query(BaseModel):
     text: str
 
 @app.get("/")
 async def status():
-    return {"status": "Online", "mode": "Dynamic Sync", "info": "Knowledge base is updating in background."}
+    return {"status": "Online", "mode": "Structural RAG", "synced_urls": len(UNIVERSITY_URLS)}
 
 @app.post("/chat")
 async def chat(query: Query):
     try:
-        if query.text.lower().strip() in ["hi", "hello", "hey"]:
-            return {"response": EXACT_GREETING}
-
-        # Check if DB is still empty
+        # Check if DB has data
         if collection.count() == 0:
-            return {"response": "I am currently synchronizing with the HITS website. Please give me 1 minute to finish learning!"}
+            return {"response": "I am currently performing a structural sync of the HITS website. Please wait a moment."}
 
+        # 1. Retrieve the top 6 most relevant structural chunks
         results = collection.query(query_texts=[query.text], n_results=6)
         
-        if results['documents'] and results['distances'][0][0] < 1.7:
-            context = "\n".join(results['documents'][0])
-            response = client.chat.completions.create(
-                messages=[
-                    {"role": "system", "content": f"You are Leo Bot. Use this HITS Website context: {context}"},
-                    {"role": "user", "content": query.text}
-                ],
-                model="llama-3.3-70b-versatile",
-                temperature=0.1
-            )
-            return {"response": response.choices[0].message.content}
+        # 2. Build the context string including the Labels
+        context_parts = []
+        for doc, meta in zip(results['documents'][0], results['metadatas'][0]):
+            context_parts.append(f"[Section: {meta['label']}]\n{doc}")
         
-        return {"response": "I couldn't find that specific detail. Please check info@hindustanuniv.ac.in."}
+        full_context = "\n\n---\n\n".join(context_parts)
+
+        # 3. Generate response with Llama 3.3
+        response = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system", 
+                    "content": (
+                        "You are Leo Bot, the official HITS expert. "
+                        "Use the following structured website data to answer. "
+                        "If a date or fee is in a table, report it accurately. "
+                        "If the answer isn't in the context, say you don't know.\n\n"
+                        f"CONTEXT:\n{full_context}"
+                    )
+                },
+                {"role": "user", "content": query.text}
+            ],
+            model="llama-3.3-70b-versatile",
+            temperature=0.1
+        )
+        
+        return {"response": response.choices[0].message.content}
+
     except Exception as e:
-        return {"response": "The server is warming up. Please try again in a few moments."}
+        print(f"Chat Error: {e}")
+        return {"response": "The knowledge base is currently refreshing. Please try again in 30 seconds."}
