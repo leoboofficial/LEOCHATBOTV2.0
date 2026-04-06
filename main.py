@@ -78,7 +78,7 @@ async def chat(query: Query):
         if collection.count() == 0:
             return {"response": "I am currently synchronizing with the HITS website. Please give me 1 minute to finish learning!"}
 
-        results = collection.query(query_texts=[query.text], n_results=3)
+        results = collection.query(query_texts=[query.text], n_results=6)
         
         if results['documents'] and results['distances'][0][0] < 1.7:
             context = "\n".join(results['documents'][0])
