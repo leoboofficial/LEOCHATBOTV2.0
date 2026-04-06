@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from chromadb.utils import embedding_functions
 from langchain_community.document_loaders import WebBaseLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitter import RecursiveCharacterTextSplitter
 
 # --- RENDER SQLITE FIX ---
 try:
